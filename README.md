@@ -29,16 +29,6 @@ raw sEMG ──▶ RMS (30 ms window) ──▶ IEMG (1 s window)
 | **Demo** | Built-in JS simulator | No | Any browser / GitHub Pages |
 | **BITalino** | Real device via local Python server | Yes | Your PC (localhost) |
 
-**EN** — The browser cannot connect to BITalino directly: Web Bluetooth only
-supports BLE, while BITalino communicates over **Bluetooth Classic (SPP)**, and
-in-browser Python (Pyodide) cannot open OS Bluetooth sockets. So the hardware
-side stays in Python — where the `bitalino` library already works — and streams
-to the front-end over a WebSocket.
-
-**JP** — ブラウザは BITalino に直接つなげません。Web Bluetooth は BLE 専用で、
-BITalino は **Bluetooth Classic（SPP）** だからです。さらにブラウザ内 Python
-（Pyodide）は OS の Bluetooth ソケットを開けません。そこでハードウェア側は
-Python（`bitalino` ライブラリが動く環境）に残し、WebSocket でフロントへ配信します。
 
 ```
  BITalino ──Bluetooth Classic(SPP)──▶ [PC]  Python: bitalino + FastAPI
@@ -116,18 +106,6 @@ iemg-biofeedback/
 │   └── requirements.txt
 └── README.md
 ```
-
----
-
-## Deploy the demo on GitHub Pages / デモを GitHub Pages に公開
-
-GitHub Pages serves static files only (no Python), so it hosts the **Demo**
-build. In repository **Settings → Pages**, set the source to your branch
-(`main`) and the **root** folder. The live demo appears at
-`https://<username>.github.io/<repo>/`. Real-hardware use runs locally with the
-server, as above.
-
----
 
 ## Notes / 補足
 
