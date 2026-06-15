@@ -1,4 +1,5 @@
 # iEMG Monitor — sEMG Biofeedback
+**▶ ライブデモ: https://hata-3-git.github.io/iemg-biofeedback/**
 
 Real-time surface EMG (sEMG) biofeedback. A muscle's electrical activity is read,
 converted to millivolts, smoothed with a sliding **RMS**, and integrated into
