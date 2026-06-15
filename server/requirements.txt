@@ -1,0 +1,10 @@
+# iEMG Monitor — server dependencies
+fastapi>=0.110
+uvicorn[standard]>=0.27
+numpy>=1.24
+
+# Hardware (real BITalino) — needed only when NOT running in SIM mode.
+# bitalino pulls in pybluez for Bluetooth Classic; on some systems you may
+# install one of the maintained forks instead (e.g. pybluez2).
+bitalino>=1.2.1
+# pybluez2>=0.46        # uncomment if `pip install bitalino` cannot build pybluez

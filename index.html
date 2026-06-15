@@ -1,0 +1,764 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>iEMG Monitor — sEMG Biofeedback</title>
+<meta name="description" content="Real-time surface EMG biofeedback: raw sEMG → RMS → IEMG. Browser demo with simulated signal, or live BITalino via local Python server." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --bg:#0E1116; --bg2:#12161D; --panel:#161B23; --panel2:#1B2230;
+    --line:#232A35; --line2:#2C3542;
+    --ink:#E8EDF3; --muted:#9AA6B6; --faint:#5E6A7A;
+    --raw:#46D9CE; --rms:#F4B860; --iemg:#FF5C5C; --iemg2:#FF8B5E;
+    --ok:#5BD6A0; --warn:#F4B860; --bad:#FF6B6B;
+    --disp:'Space Grotesk',system-ui,sans-serif;
+    --body:'Inter',system-ui,sans-serif;
+    --mono:'JetBrains Mono',ui-monospace,monospace;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;}
+  body{
+    background:
+      radial-gradient(1200px 600px at 80% -10%, rgba(70,217,206,.06), transparent 60%),
+      radial-gradient(900px 500px at -5% 110%, rgba(255,92,92,.06), transparent 60%),
+      var(--bg);
+    color:var(--ink); font-family:var(--body);
+    -webkit-font-smoothing:antialiased; line-height:1.5;
+    min-height:100vh;
+  }
+  .wrap{max-width:1180px; margin:0 auto; padding:28px 22px 56px;}
+
+  /* ---------- Header ---------- */
+  header.top{
+    display:flex; align-items:center; gap:18px; flex-wrap:wrap;
+    padding-bottom:20px; margin-bottom:22px;
+    border-bottom:1px solid var(--line);
+  }
+  .brand{display:flex; align-items:center; gap:14px; margin-right:auto;}
+  .mark{
+    width:42px; height:42px; flex:0 0 auto; border-radius:11px;
+    background:linear-gradient(145deg, #1d2531, #131820);
+    border:1px solid var(--line2);
+    display:grid; place-items:center; position:relative; overflow:hidden;
+  }
+  .mark svg{display:block;}
+  .brand h1{
+    font-family:var(--disp); font-weight:600; font-size:20px; letter-spacing:-.01em;
+    margin:0; line-height:1.1;
+  }
+  .brand .sub{font-size:12.5px; color:var(--muted); margin-top:2px;}
+  .brand .pipe{color:var(--raw);} .brand .pipe.b{color:var(--rms);} .brand .pipe.c{color:var(--iemg);}
+
+  .status{
+    display:flex; align-items:center; gap:9px;
+    font-family:var(--mono); font-size:12px; color:var(--muted);
+    padding:8px 13px; border:1px solid var(--line); border-radius:999px;
+    background:var(--panel);
+  }
+  .dot{width:8px; height:8px; border-radius:50%; background:var(--faint); box-shadow:0 0 0 0 transparent;}
+  .dot.live{background:var(--ok);}
+  .dot.demo{background:var(--rms);}
+  .dot.rec{background:var(--iemg); animation:pulse 1.3s infinite;}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(255,92,92,.55);}70%{box-shadow:0 0 0 7px rgba(255,92,92,0);}100%{box-shadow:0 0 0 0 rgba(255,92,92,0);}}
+
+  /* ---------- Layout grid ---------- */
+  .console{display:grid; grid-template-columns:1fr 200px; gap:16px; align-items:stretch;}
+  .scopes{display:flex; flex-direction:column; gap:16px; min-width:0;}
+
+  .panel{
+    background:linear-gradient(180deg, var(--panel), var(--bg2));
+    border:1px solid var(--line); border-radius:16px; padding:16px 16px 12px;
+    position:relative; min-width:0;
+  }
+  .panel .phead{
+    display:flex; align-items:baseline; justify-content:space-between; gap:12px;
+    margin-bottom:10px;
+  }
+  .phead .lbl{
+    font-family:var(--mono); font-size:11px; letter-spacing:.14em; text-transform:uppercase;
+    color:var(--muted); display:flex; align-items:center; gap:8px;
+  }
+  .swatch{width:9px; height:9px; border-radius:2px; flex:0 0 auto;}
+  .sw-raw{background:var(--raw);} .sw-rms{background:var(--rms);} .sw-iemg{background:var(--iemg);}
+  .phead .stage{font-family:var(--mono); font-size:10px; color:var(--faint); letter-spacing:.1em;}
+  .phead .read{font-family:var(--mono); font-size:13px; color:var(--ink);}
+  .phead .read b{font-weight:700;} .phead .read span{color:var(--faint); font-weight:400;}
+
+  canvas{display:block; width:100%; border-radius:9px;}
+  .scope-c{height:228px;}
+  .rms-c{height:96px;}
+
+  /* ---------- IEMG column ---------- */
+  .iemg-panel{
+    background:linear-gradient(180deg, var(--panel), var(--bg2));
+    border:1px solid var(--line); border-radius:16px; padding:16px 12px 14px;
+    display:flex; flex-direction:column; align-items:center;
+  }
+  .iemg-panel .cap{
+    font-family:var(--mono); font-size:11px; letter-spacing:.14em; text-transform:uppercase;
+    color:var(--muted); display:flex; align-items:center; gap:7px; align-self:flex-start;
+  }
+  .iemg-panel .stage{font-family:var(--mono); font-size:10px; color:var(--faint); align-self:flex-start; margin-top:2px;}
+  .col-c{height:300px; width:100%; margin:14px 0 8px;}
+  .iemg-val{font-family:var(--mono); font-weight:700; font-size:26px; color:var(--iemg); letter-spacing:-.01em; line-height:1;}
+  .iemg-unit{font-family:var(--mono); font-size:11px; color:var(--muted); margin-top:4px;}
+
+  /* ---------- Tiles ---------- */
+  .tiles{display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-top:16px;}
+  .tile{
+    background:var(--panel); border:1px solid var(--line); border-radius:13px; padding:13px 14px;
+  }
+  .tile .k{font-family:var(--mono); font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:var(--faint);}
+  .tile .v{font-family:var(--mono); font-weight:700; font-size:20px; margin-top:7px; line-height:1; letter-spacing:-.01em;}
+  .tile .u{font-family:var(--mono); font-size:11px; color:var(--muted); margin-left:4px; font-weight:400;}
+  .tile.raw .v{color:var(--raw);} .tile.rms .v{color:var(--rms);}
+  .tile.iemg .v{color:var(--iemg);} .tile.time .v{color:var(--ink);}
+
+  /* ---------- Controls ---------- */
+  .controls{
+    margin-top:20px; background:linear-gradient(180deg, var(--panel), var(--bg2));
+    border:1px solid var(--line); border-radius:16px; padding:18px;
+    display:grid; grid-template-columns:1fr auto; gap:20px; align-items:center;
+  }
+  .source{display:flex; flex-direction:column; gap:12px; min-width:0;}
+  .seg{display:inline-flex; background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:3px; gap:2px; align-self:flex-start;}
+  .seg button{
+    font-family:var(--mono); font-size:12px; letter-spacing:.03em;
+    border:0; background:transparent; color:var(--muted); cursor:pointer;
+    padding:7px 14px; border-radius:7px; transition:.15s;
+  }
+  .seg button[aria-pressed="true"]{background:var(--panel2); color:var(--ink); box-shadow:inset 0 0 0 1px var(--line2);}
+  .seg button:focus-visible{outline:2px solid var(--raw); outline-offset:2px;}
+
+  .fields{display:flex; gap:10px; flex-wrap:wrap;}
+  .field{display:flex; flex-direction:column; gap:5px;}
+  .field label{font-family:var(--mono); font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--faint);}
+  .field input{
+    font-family:var(--mono); font-size:13px; color:var(--ink);
+    background:var(--bg); border:1px solid var(--line); border-radius:9px;
+    padding:9px 11px; width:210px; max-width:60vw;
+  }
+  .field input:focus-visible{outline:2px solid var(--raw); outline-offset:1px; border-color:var(--line2);}
+  .field.mac input{width:180px;}
+  .hint{font-family:var(--body); font-size:12px; color:var(--faint); max-width:520px;}
+  .hint code{font-family:var(--mono); color:var(--muted); background:var(--bg); padding:1px 5px; border-radius:5px; font-size:11.5px;}
+
+  /* contract pad (demo) */
+  .pad-wrap{display:flex; align-items:center; gap:14px;}
+  .pad{
+    -webkit-user-select:none; user-select:none; touch-action:none; cursor:pointer;
+    width:118px; height:118px; border-radius:50%; flex:0 0 auto; position:relative;
+    background:radial-gradient(circle at 50% 38%, #20262f, #12161d);
+    border:1px solid var(--line2); display:grid; place-items:center; text-align:center;
+    transition:transform .08s ease, box-shadow .12s ease;
+  }
+  .pad .ptxt{font-family:var(--mono); font-size:11px; letter-spacing:.06em; color:var(--muted); line-height:1.4;}
+  .pad .ptxt b{display:block; font-size:13px; color:var(--ink); letter-spacing:.12em; margin-bottom:3px;}
+  .pad.armed{box-shadow:0 0 0 1px var(--line2), 0 6px 26px rgba(255,92,92,.10);}
+  .pad.hold{transform:scale(.965); box-shadow:0 0 0 2px var(--iemg), 0 0 34px rgba(255,92,92,.42);}
+  .pad:focus-visible{outline:2px solid var(--iemg); outline-offset:4px;}
+  .pad-ring{position:absolute; inset:-1px; border-radius:50%; pointer-events:none;}
+  .auto-row{display:flex; flex-direction:column; gap:9px; align-items:flex-start;}
+  .switch{display:inline-flex; align-items:center; gap:9px; cursor:pointer; font-family:var(--mono); font-size:12px; color:var(--muted);}
+  .switch input{position:absolute; opacity:0; width:0; height:0;}
+  .track{width:38px; height:21px; border-radius:999px; background:var(--bg); border:1px solid var(--line2); position:relative; transition:.18s;}
+  .knob{position:absolute; top:2px; left:2px; width:15px; height:15px; border-radius:50%; background:var(--faint); transition:.18s;}
+  .switch input:checked + .track{background:rgba(91,214,160,.18); border-color:var(--ok);}
+  .switch input:checked + .track .knob{transform:translateX(17px); background:var(--ok);}
+  .switch input:focus-visible + .track{outline:2px solid var(--ok); outline-offset:2px;}
+
+  /* action buttons */
+  .actions{display:grid; grid-auto-flow:row; gap:9px; align-content:start;}
+  .btn{
+    font-family:var(--disp); font-weight:600; font-size:13.5px; letter-spacing:.01em;
+    border:1px solid var(--line2); background:var(--panel2); color:var(--ink);
+    padding:11px 18px; border-radius:11px; cursor:pointer; min-width:150px; text-align:left;
+    display:flex; align-items:center; gap:10px; transition:.14s;
+  }
+  .btn:hover:not(:disabled){border-color:#3a4658; background:#222b3a;}
+  .btn:focus-visible{outline:2px solid var(--raw); outline-offset:2px;}
+  .btn:disabled{opacity:.38; cursor:not-allowed;}
+  .btn .ic{width:16px; height:16px; flex:0 0 auto; opacity:.9;}
+  .btn.primary{background:linear-gradient(180deg,#244055,#1a2f40); border-color:#2f5168; color:#dff3ff;}
+  .btn.primary:hover:not(:disabled){background:linear-gradient(180deg,#2a4d66,#1d3548);}
+  .btn.rec{background:linear-gradient(180deg,#5a2330,#421a24); border-color:#7a3340; color:#ffe3e6;}
+  .btn.rec:hover:not(:disabled){background:linear-gradient(180deg,#6b2a39,#4c1d29);}
+  .btn.ghost{background:transparent;}
+
+  /* toast */
+  .toast{
+    position:fixed; left:50%; bottom:26px; transform:translateX(-50%) translateY(12px);
+    background:var(--panel2); border:1px solid var(--line2); color:var(--ink);
+    font-family:var(--mono); font-size:12.5px; padding:11px 16px; border-radius:11px;
+    box-shadow:0 10px 40px rgba(0,0,0,.45); opacity:0; pointer-events:none; transition:.22s; z-index:50;
+    max-width:90vw;
+  }
+  .toast.show{opacity:1; transform:translateX(-50%) translateY(0);}
+  .toast.err{border-color:var(--bad); color:#ffd7d7;}
+
+  footer.note{
+    margin-top:26px; padding-top:16px; border-top:1px solid var(--line);
+    font-size:12.5px; color:var(--faint); display:flex; gap:8px; flex-wrap:wrap; align-items:center;
+  }
+  footer.note .pill{font-family:var(--mono); font-size:11px; color:var(--muted); border:1px solid var(--line); border-radius:6px; padding:2px 7px;}
+  footer.note a{color:var(--muted); text-decoration:none; border-bottom:1px dotted var(--faint);}
+  footer.note a:hover{color:var(--ink);}
+
+  @media (max-width:860px){
+    .console{grid-template-columns:1fr;}
+    .col-c{height:200px; margin:12px 0 8px;}
+    .iemg-panel{align-items:stretch;}
+    .iemg-panel .cap, .iemg-panel .stage{align-self:flex-start;}
+    .iemg-readout{text-align:center; margin-top:2px;}
+    .controls{grid-template-columns:1fr;}
+    .actions{grid-template-columns:repeat(2,1fr);}
+    .actions .btn{min-width:0;}
+    .tiles{grid-template-columns:repeat(2,1fr);}
+  }
+  @media (prefers-reduced-motion:reduce){
+    *{animation-duration:.001ms !important; transition-duration:.001ms !important;}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div class="brand">
+      <div class="mark" aria-hidden="true">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+          <path d="M2 12h3.4l1.7-6 2.6 13 2.3-9.5 1.6 4.2 1.3-2.4H22" stroke="#46D9CE" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <div>
+        <h1>iEMG Monitor</h1>
+        <div class="sub">Surface EMG biofeedback &middot; <span class="pipe">raw sEMG</span> → <span class="pipe b">RMS</span> → <span class="pipe c">IEMG</span></div>
+      </div>
+    </div>
+    <div class="status" id="status">
+      <span class="dot" id="statusDot"></span>
+      <span id="statusText">Disconnected</span>
+    </div>
+  </header>
+
+  <div class="console">
+    <div class="scopes">
+      <!-- RAW sEMG scope -->
+      <section class="panel">
+        <div class="phead">
+          <span class="lbl"><span class="swatch sw-raw"></span>Raw sEMG</span>
+          <span class="read" id="rawRead"><b>0.000</b> <span>mV pk</span></span>
+        </div>
+        <canvas class="scope-c" id="scope" aria-label="Real-time surface EMG waveform"></canvas>
+      </section>
+
+      <!-- RMS envelope -->
+      <section class="panel">
+        <div class="phead">
+          <span class="lbl"><span class="swatch sw-rms"></span>RMS envelope</span>
+          <span class="stage">30&nbsp;ms window &middot; √(mean(x²))</span>
+        </div>
+        <canvas class="rms-c" id="rms" aria-label="RMS envelope of the EMG signal"></canvas>
+      </section>
+    </div>
+
+    <!-- IEMG column -->
+    <aside class="iemg-panel">
+      <span class="cap"><span class="swatch sw-iemg"></span>IEMG</span>
+      <span class="stage">∑RMS · Δt &middot; 1&nbsp;s window</span>
+      <canvas class="col-c" id="col" aria-label="Integrated EMG output level"></canvas>
+      <div class="iemg-readout">
+        <div class="iemg-val" id="iemgVal">0.000</div>
+        <div class="iemg-unit">mV·s</div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- Tiles -->
+  <div class="tiles">
+    <div class="tile raw"><div class="k">Raw peak</div><div class="v"><span id="tRaw">0.000</span><span class="u">mV</span></div></div>
+    <div class="tile rms"><div class="k">RMS</div><div class="v"><span id="tRms">0.000</span><span class="u">mV</span></div></div>
+    <div class="tile iemg"><div class="k">IEMG</div><div class="v"><span id="tIemg">0.000</span><span class="u">mV·s</span></div></div>
+    <div class="tile time"><div class="k">Elapsed</div><div class="v"><span id="tTime">0.00</span><span class="u">s</span></div></div>
+  </div>
+
+  <!-- Controls -->
+  <div class="controls">
+    <div class="source">
+      <div class="seg" role="group" aria-label="Signal source">
+        <button id="modeDemo" aria-pressed="true">Demo (simulator)</button>
+        <button id="modeDevice" aria-pressed="false">BITalino (local server)</button>
+      </div>
+
+      <!-- Demo controls -->
+      <div id="demoCtrls" class="pad-wrap">
+        <div class="pad armed" id="pad" role="button" tabindex="0" aria-label="Hold to contract — drives the simulated muscle activation">
+          <span class="pad-ring" id="padRing"></span>
+          <span class="ptxt"><b>CONTRACT</b>press &amp; hold</span>
+        </div>
+        <div class="auto-row">
+          <label class="switch">
+            <input type="checkbox" id="autoToggle" />
+            <span class="track"><span class="knob"></span></span>
+            Auto demo
+          </label>
+          <span class="hint">Hold the pad to flex, or let <b style="color:var(--muted)">Auto demo</b> generate a lifelike activation pattern hands-free.</span>
+        </div>
+      </div>
+
+      <!-- Device controls -->
+      <div id="deviceCtrls" class="fields" style="display:none;">
+        <div class="field">
+          <label for="serverUrl">Server (WebSocket)</label>
+          <input id="serverUrl" value="ws://localhost:8000/ws" spellcheck="false" />
+        </div>
+        <div class="field mac">
+          <label for="mac">BITalino MAC</label>
+          <input id="mac" value="88:6B:0F:D9:18:22" spellcheck="false" />
+        </div>
+        <span class="hint">Run the Python server first: <code>uvicorn app:app</code>. It pairs with the device over Bluetooth and streams here. No server? Stay on Demo mode.</span>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button class="btn primary" id="btnConnect">
+        <svg class="ic" viewBox="0 0 24 24" fill="none"><path d="M9 12l2 2 4-4M7 7l-3 3a4 4 0 005.6 5.6M17 17l3-3a4 4 0 00-5.6-5.6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Connect
+      </button>
+      <button class="btn rec" id="btnStart" disabled>
+        <svg class="ic" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="6" fill="currentColor"/></svg>
+        Start recording
+      </button>
+      <button class="btn" id="btnStop" disabled>
+        <svg class="ic" viewBox="0 0 24 24" fill="none"><rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor"/></svg>
+        Stop
+      </button>
+      <button class="btn ghost" id="btnSave" disabled>
+        <svg class="ic" viewBox="0 0 24 24" fill="none"><path d="M12 4v10m0 0l-3.5-3.5M12 14l3.5-3.5M5 18h14" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Save CSV
+      </button>
+      <button class="btn ghost" id="btnReset">
+        <svg class="ic" viewBox="0 0 24 24" fill="none"><path d="M4 12a8 8 0 108-8M4 4v4h4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Reset
+      </button>
+    </div>
+  </div>
+
+  <footer class="note">
+    <span class="pill">fs 1000 Hz</span>
+    <span class="pill">gain 1009</span>
+    <span class="pill">window 30 ms</span>
+    <span class="pill">IEMG 1 s</span>
+    <span>Same DSP as the BITalino Python app. CSV columns: <code style="font-family:var(--mono)">Time (s), IEMG (mV·s)</code>.</span>
+  </footer>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+/* ===================== Constants (mirror the BITalino Python app) ===================== */
+const SAMPLING_RATE   = 1000;                         // Hz
+const SAMPLES_TO_READ = 30;                           // samples per processing window (30 ms)
+const BITS            = 10;                            // ADC resolution
+const VCC             = 3.3;                           // V
+const GAIN            = 1009;                          // EMG sensor gain
+const RMS_INTERVAL    = SAMPLES_TO_READ / SAMPLING_RATE;          // 0.03 s
+const IEMG_WINDOW_S   = 1.0;
+const IEMG_WINDOW_POINTS = Math.round(IEMG_WINDOW_S / RMS_INTERVAL); // 33
+
+// ADC count -> mV, identical to (((raw/2^BITS) - 0.5) * VCC / GAIN) * 1000
+const ADC_MAX = 2 ** BITS;
+function toMv(raw){ return (((raw / ADC_MAX) - 0.5) * VCC / GAIN) * 1000; }
+const MV_FULLSCALE = (0.5 * VCC / GAIN) * 1000;       // ~1.635 mV
+
+/* ===================== State ===================== */
+const S = {
+  mode: 'demo',            // 'demo' | 'device'
+  connected: false,
+  recording: false,
+  rmsBuffer: [],           // sliding RMS window (matches Python rms_buffer)
+  iemg: 0,
+  iemgDisp: 0,             // eased value for the gauge
+  gaugeMax: 0.08,
+  rms: 0, rawPeak: 0,
+  count: 0,                // number of processed windows
+  saved: [],               // IEMG values, like saved_data
+  rawTrace: new Float32Array(1400).fill(0),  // ring buffer of recent mV samples
+  rawHead: 0,
+  rmsHist: new Float32Array(260).fill(0),
+  rmsHead: 0,
+  ws: null,
+  // simulator
+  activation: 0, activationTarget: 0, auto: false, autoPhase: 0, holding: false,
+};
+
+/* ===================== DSP: process one 30-sample window ===================== */
+function processWindow(emgMv){
+  let sumSq = 0, peak = 0;
+  for(let i=0;i<emgMv.length;i++){
+    const v = emgMv[i];
+    sumSq += v*v;
+    const a = Math.abs(v); if(a>peak) peak=a;
+    // push into raw ring buffer
+    S.rawTrace[S.rawHead] = v;
+    S.rawHead = (S.rawHead + 1) % S.rawTrace.length;
+  }
+  const rms = Math.sqrt(sumSq / emgMv.length);
+  S.rmsBuffer.push(rms);
+  if(S.rmsBuffer.length > IEMG_WINDOW_POINTS) S.rmsBuffer.shift();
+  let acc = 0; for(const r of S.rmsBuffer) acc += r;
+  const iemg = acc * RMS_INTERVAL;
+
+  S.rms = rms; S.rawPeak = peak; S.iemg = iemg; S.count++;
+  S.rmsHist[S.rmsHead] = rms;
+  S.rmsHead = (S.rmsHead + 1) % S.rmsHist.length;
+  S.saved.push(iemg);
+
+  // gauge auto-range (decaying max) — improves on the fixed 1.0 ceiling
+  const decay = 0.0006;
+  S.gaugeMax = Math.max(S.gaugeMax * (1 - decay), iemg * 1.18, 0.05);
+}
+
+/* ===================== Simulator (demo mode) ===================== */
+let gaussSpare = null;
+function gauss(){
+  if(gaussSpare!==null){ const v=gaussSpare; gaussSpare=null; return v; }
+  let u=0,v=0; while(u===0)u=Math.random(); while(v===0)v=Math.random();
+  const m=Math.sqrt(-2*Math.log(u)); gaussSpare=m*Math.sin(2*Math.PI*v); return m*Math.cos(2*Math.PI*v);
+}
+function simulateWindow(){
+  // ease activation toward target
+  if(S.auto){
+    S.autoPhase += 0.045;
+    let p = 0.5 + 0.5*Math.sin(S.autoPhase) * Math.sin(S.autoPhase*0.37 + 1.1);
+    if(Math.random() < 0.012) p = Math.min(1, p + 0.6);   // occasional burst
+    S.activationTarget = Math.max(0, Math.min(1, p));
+  }
+  const k = S.holding ? 0.22 : 0.10;
+  S.activation += (S.activationTarget - S.activation) * k;
+  const act = Math.max(0, Math.min(1, S.activation));
+
+  const sigma = 1.4 + act * 112;            // ADC counts of fluctuation
+  const out = new Float32Array(SAMPLES_TO_READ);
+  for(let i=0;i<SAMPLES_TO_READ;i++){
+    let raw = 512 + gauss() * sigma;
+    if(raw<0)raw=0; else if(raw>ADC_MAX-1)raw=ADC_MAX-1;
+    out[i] = toMv(raw);
+  }
+  return out;
+}
+
+/* ===================== Acquisition loop ===================== */
+let acqTimer = null;
+function startLoop(){
+  stopLoop();
+  if(S.mode === 'demo'){
+    acqTimer = setInterval(()=>{
+      if(!S.recording) return;
+      processWindow(simulateWindow());
+    }, SAMPLES_TO_READ); // ~30 ms
+  }
+  // device mode is driven by WebSocket frames
+}
+function stopLoop(){ if(acqTimer){ clearInterval(acqTimer); acqTimer=null; } }
+
+/* ===================== WebSocket (device mode) ===================== */
+function connectDevice(){
+  const url = el('serverUrl').value.trim();
+  const mac = el('mac').value.trim();
+  setStatus('demo','Connecting…');
+  let ws;
+  try { ws = new WebSocket(url); }
+  catch(e){ toast('Invalid server URL','err'); setStatus('off','Disconnected'); return; }
+  S.ws = ws;
+  const timeout = setTimeout(()=>{ if(ws.readyState!==1){ ws.close(); } }, 4000);
+
+  ws.onopen = ()=>{
+    clearTimeout(timeout);
+    ws.send(JSON.stringify({cmd:'config', mac}));
+    S.connected = true;
+    setStatus('live','BITalino live');
+    toast('Connected to local server');
+    afterConnect();
+  };
+  ws.onmessage = (ev)=>{
+    let f; try{ f = JSON.parse(ev.data); }catch(_){ return; }
+    if(f.error){ toast('Device: '+f.error,'err'); return; }
+    if(f.emg){ ingestServerFrame(f); }
+  };
+  ws.onerror = ()=>{};
+  ws.onclose = ()=>{
+    clearTimeout(timeout);
+    if(!S.connected){
+      toast('No local server reachable — switch to Demo to try it now','err');
+      setStatus('off','Disconnected');
+    } else {
+      S.connected = false; S.recording = false;
+      setStatus('off','Disconnected');
+      syncButtons();
+    }
+    S.ws = null;
+  };
+}
+// Server already computed mV per sample + rms + iemg; we re-run the same trace bookkeeping.
+function ingestServerFrame(f){
+  if(!S.recording) return;
+  const emg = Float32Array.from(f.emg);
+  // reuse processWindow for identical bookkeeping (recomputes rms/iemg locally too)
+  processWindow(emg);
+}
+
+/* ===================== Render loop (decoupled, 60fps) ===================== */
+const scope = setupCanvas('scope');
+const rmsC  = setupCanvas('rms');
+const colC  = setupCanvas('col');
+
+function setupCanvas(id){
+  const c = el(id); const ctx = c.getContext('2d');
+  function resize(){
+    const r = c.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio||1, 2);
+    c.width = Math.round(r.width*dpr); c.height = Math.round(r.height*dpr);
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    c._w = r.width; c._h = r.height;
+  }
+  resize(); window.addEventListener('resize', resize);
+  return {c, ctx, resize};
+}
+
+function drawScope(){
+  const {ctx,c} = scope; const w=c._w, h=c._h; ctx.clearRect(0,0,w,h);
+  // grid
+  ctx.strokeStyle = 'rgba(255,255,255,0.04)'; ctx.lineWidth=1;
+  for(let gx=0; gx<=w; gx+=w/8){ ctx.beginPath(); ctx.moveTo(gx,0); ctx.lineTo(gx,h); ctx.stroke(); }
+  for(let gy=0; gy<=h; gy+=h/4){ ctx.beginPath(); ctx.moveTo(0,gy); ctx.lineTo(w,gy); ctx.stroke(); }
+  // midline
+  ctx.strokeStyle='rgba(255,255,255,0.10)'; ctx.beginPath(); ctx.moveTo(0,h/2); ctx.lineTo(w,h/2); ctx.stroke();
+
+  const n = S.rawTrace.length, mid=h/2, amp=(h/2-6)/MV_FULLSCALE;
+  // glow
+  ctx.lineJoin='round'; ctx.shadowColor='rgba(70,217,206,0.55)'; ctx.shadowBlur=6;
+  ctx.strokeStyle = getCss('--raw'); ctx.lineWidth=1.6;
+  ctx.beginPath();
+  for(let i=0;i<n;i++){
+    const idx=(S.rawHead+i)%n;
+    const x=(i/(n-1))*w;
+    let y=mid - S.rawTrace[idx]*amp;
+    if(y<1)y=1; else if(y>h-1)y=h-1;
+    if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+  }
+  ctx.stroke(); ctx.shadowBlur=0;
+}
+
+function drawRms(){
+  const {ctx,c}=rmsC; const w=c._w,h=c._h; ctx.clearRect(0,0,w,h);
+  ctx.strokeStyle='rgba(255,255,255,0.04)';
+  for(let gy=0;gy<=h;gy+=h/3){ ctx.beginPath(); ctx.moveTo(0,gy); ctx.lineTo(w,gy); ctx.stroke(); }
+  const n=S.rmsHist.length;
+  let mx=0.02; for(let i=0;i<n;i++) if(S.rmsHist[i]>mx) mx=S.rmsHist[i];
+  mx*=1.15;
+  const col=getCss('--rms');
+  // filled envelope
+  ctx.beginPath();
+  for(let i=0;i<n;i++){
+    const idx=(S.rmsHead+i)%n; const x=(i/(n-1))*w; const y=h-(S.rmsHist[idx]/mx)*(h-4)-2;
+    if(i===0)ctx.moveTo(x,y); else ctx.lineTo(x,y);
+  }
+  ctx.lineTo(w,h); ctx.lineTo(0,h); ctx.closePath();
+  const grad=ctx.createLinearGradient(0,0,0,h);
+  grad.addColorStop(0,'rgba(244,184,96,0.30)'); grad.addColorStop(1,'rgba(244,184,96,0.02)');
+  ctx.fillStyle=grad; ctx.fill();
+  // line
+  ctx.beginPath();
+  for(let i=0;i<n;i++){ const idx=(S.rmsHead+i)%n; const x=(i/(n-1))*w; const y=h-(S.rmsHist[idx]/mx)*(h-4)-2; if(i===0)ctx.moveTo(x,y); else ctx.lineTo(x,y); }
+  ctx.strokeStyle=col; ctx.lineWidth=1.6; ctx.stroke();
+}
+
+function drawColumn(){
+  const {ctx,c}=colC; const w=c._w,h=c._h; ctx.clearRect(0,0,w,h);
+  const colW=Math.min(74,w*0.42), x=(w-colW)/2, top=8, bot=h-8, H=bot-top;
+  // frame
+  ctx.fillStyle='rgba(255,255,255,0.025)';
+  roundRect(ctx,x,top,colW,H,9); ctx.fill();
+  ctx.strokeStyle='rgba(255,255,255,0.07)'; ctx.lineWidth=1; roundRect(ctx,x,top,colW,H,9); ctx.stroke();
+  // ticks
+  ctx.strokeStyle='rgba(255,255,255,0.10)'; ctx.fillStyle=getCss('--faint');
+  ctx.font='9px '+getCss('--mono-raw'); ctx.textAlign='right'; ctx.textBaseline='middle';
+  const ticks=4;
+  for(let t=0;t<=ticks;t++){
+    const fy=top + H*(t/ticks); const val=S.gaugeMax*(1-t/ticks);
+    ctx.beginPath(); ctx.moveTo(x-4,fy); ctx.lineTo(x,fy); ctx.stroke();
+    ctx.fillText(val.toFixed(2), x-7, fy);
+  }
+  // fill
+  const frac=Math.max(0,Math.min(1, S.iemgDisp / S.gaugeMax));
+  const fillH=H*frac, fy=bot-fillH;
+  ctx.save(); roundRect(ctx,x,top,colW,H,9); ctx.clip();
+  const grad=ctx.createLinearGradient(0,bot,0,top);
+  grad.addColorStop(0,getCss('--iemg')); grad.addColorStop(1,getCss('--iemg2'));
+  ctx.fillStyle=grad; ctx.fillRect(x,fy,colW,fillH);
+  ctx.restore();
+  // meniscus glow
+  if(frac>0.002){
+    ctx.shadowColor=getCss('--iemg'); ctx.shadowBlur=12;
+    ctx.strokeStyle='rgba(255,255,255,0.85)'; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.moveTo(x+2,fy); ctx.lineTo(x+colW-2,fy); ctx.stroke();
+    ctx.shadowBlur=0;
+  }
+}
+
+function getCss(v){
+  if(v==='--mono-raw') return "'JetBrains Mono',monospace";
+  return getComputedStyle(document.documentElement).getPropertyValue(v).trim() || '#fff';
+}
+function roundRect(ctx,x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
+
+let last=performance.now();
+function frame(now){
+  const dt=Math.min((now-last)/1000,0.05); last=now;
+  // ease gauge
+  S.iemgDisp += (S.iemg - S.iemgDisp) * Math.min(1, dt*9);
+  // pad ring reflects activation in demo
+  if(S.mode==='demo') updatePadRing();
+  drawScope(); drawRms(); drawColumn();
+  // readouts
+  setText('iemgVal', S.iemg.toFixed(3));
+  setText('rawRead', null, `<b>${S.rawPeak.toFixed(3)}</b> <span>mV pk</span>`);
+  setText('tRaw', S.rawPeak.toFixed(3));
+  setText('tRms', S.rms.toFixed(3));
+  setText('tIemg', S.iemg.toFixed(3));
+  setText('tTime', (S.count*RMS_INTERVAL).toFixed(2));
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+/* ===================== Pad ring (visual) ===================== */
+let padRingEl;
+function updatePadRing(){
+  if(!padRingEl) padRingEl=el('padRing');
+  const a=Math.max(0,Math.min(1,S.activation));
+  padRingEl.style.background =
+    `conic-gradient(var(--iemg) ${a*360}deg, transparent ${a*360}deg)`;
+  padRingEl.style.opacity = 0.18 + a*0.5;
+  padRingEl.style.borderRadius='50%';
+  padRingEl.style.padding='0';
+  padRingEl.style.webkitMask='radial-gradient(transparent 57px, #000 58px)';
+  padRingEl.style.mask='radial-gradient(transparent 57px, #000 58px)';
+}
+
+/* ===================== UI wiring ===================== */
+function el(id){ return document.getElementById(id); }
+function setText(id, txt, html){
+  const n=el(id); if(!n) return;
+  if(html!=null){ if(n.innerHTML!==html) n.innerHTML=html; }
+  else if(n.textContent!==txt) n.textContent=txt;
+}
+let toastTimer;
+function toast(msg, kind){
+  const t=el('toast'); t.textContent=msg; t.className='toast show'+(kind==='err'?' err':'');
+  clearTimeout(toastTimer); toastTimer=setTimeout(()=>{ t.className='toast'+(kind==='err'?' err':''); }, 2600);
+}
+function setStatus(kind, text){
+  const dot=el('statusDot'); dot.className='dot'+(kind==='live'?' live':kind==='demo'?' demo':kind==='rec'?' rec':'');
+  setText('statusText', text);
+}
+
+function setMode(mode){
+  if(S.recording) stopRecording();
+  disconnect();
+  S.mode=mode;
+  el('modeDemo').setAttribute('aria-pressed', mode==='demo');
+  el('modeDevice').setAttribute('aria-pressed', mode==='device');
+  el('demoCtrls').style.display = mode==='demo' ? 'flex':'none';
+  el('deviceCtrls').style.display = mode==='device' ? 'flex':'none';
+  el('btnConnect').style.display = mode==='device' ? '' : 'none';
+  // demo connects implicitly
+  if(mode==='demo'){ S.connected=true; setStatus('demo','Demo signal ready'); }
+  else { S.connected=false; setStatus('off','Disconnected'); }
+  syncButtons();
+}
+
+function afterConnect(){ syncButtons(); }
+function disconnect(){
+  if(S.ws){ try{S.ws.close();}catch(_){} S.ws=null; }
+  S.connected=false;
+}
+
+function syncButtons(){
+  const canRecord = S.connected && !S.recording;
+  el('btnStart').disabled = !canRecord;
+  el('btnStop').disabled  = !S.recording;
+  el('btnSave').disabled  = S.saved.length===0;
+  if(S.mode==='device') el('btnConnect').disabled = S.connected;
+}
+
+function startRecording(){
+  if(!S.connected) return;
+  S.recording=true;
+  if(S.mode==='device' && S.ws && S.ws.readyState===1) S.ws.send(JSON.stringify({cmd:'start'}));
+  setStatus('rec', S.mode==='device' ? 'Recording · BITalino' : 'Recording · demo');
+  syncButtons();
+}
+function stopRecording(){
+  S.recording=false;
+  if(S.mode==='device' && S.ws && S.ws.readyState===1) S.ws.send(JSON.stringify({cmd:'stop'}));
+  setStatus(S.mode==='device' ? (S.connected?'live':'off') : 'demo',
+            S.mode==='device' ? (S.connected?'BITalino live':'Disconnected') : 'Demo signal ready');
+  syncButtons();
+}
+
+function resetAll(){
+  S.rmsBuffer=[]; S.iemg=0; S.iemgDisp=0; S.rms=0; S.rawPeak=0; S.count=0; S.saved=[];
+  S.rawTrace.fill(0); S.rawHead=0; S.rmsHist.fill(0); S.rmsHead=0; S.gaugeMax=0.08;
+  syncButtons(); toast('Cleared');
+}
+
+function saveCSV(){
+  if(S.saved.length===0){ toast('No data to save','err'); return; }
+  let csv='Time (s),IEMG (mV·s)\n';
+  for(let i=0;i<S.saved.length;i++){
+    csv += (i*RMS_INTERVAL).toFixed(6)+','+S.saved[i].toFixed(6)+'\n';
+  }
+  const blob=new Blob([csv],{type:'text/csv'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='iemg_data.csv';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+  toast(`Saved ${S.saved.length} samples → iemg_data.csv`);
+}
+
+/* events */
+el('modeDemo').addEventListener('click', ()=>setMode('demo'));
+el('modeDevice').addEventListener('click', ()=>setMode('device'));
+el('btnConnect').addEventListener('click', connectDevice);
+el('btnStart').addEventListener('click', startRecording);
+el('btnStop').addEventListener('click', stopRecording);
+el('btnSave').addEventListener('click', saveCSV);
+el('btnReset').addEventListener('click', resetAll);
+
+// contract pad
+const pad=el('pad');
+function holdOn(e){ e.preventDefault(); S.holding=true; S.activationTarget=1; pad.classList.add('hold'); }
+function holdOff(){ S.holding=false; if(!S.auto) S.activationTarget=0; pad.classList.remove('hold'); }
+pad.addEventListener('pointerdown', holdOn);
+window.addEventListener('pointerup', holdOff);
+pad.addEventListener('keydown', e=>{ if((e.key===' '||e.key==='Enter')&&!e.repeat) holdOn(e); });
+pad.addEventListener('keyup', e=>{ if(e.key===' '||e.key==='Enter') holdOff(); });
+
+el('autoToggle').addEventListener('change', e=>{
+  S.auto=e.target.checked;
+  if(!S.auto && !S.holding) S.activationTarget=0;
+});
+
+/* init */
+setMode('demo');
+startLoop();
+</script>
+</body>
+</html>
